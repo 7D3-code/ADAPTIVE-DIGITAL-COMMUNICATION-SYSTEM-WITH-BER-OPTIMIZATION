@@ -103,66 +103,63 @@ Run with Python module mode:
 
 ```mermaid
 flowchart TD
-    A[Start App] --> B[Load UI + Theme + Parameters]
-    B --> C[User enters message/number]
-    C --> D[input_to_bits]
-    D --> E{Data type?}
-    E -->|Number| F[16-bit numeric representation]
-    E -->|Text| G[ASCII bytes -> bitstream]
-    F --> H[Base bitstream]
-    G --> H
+   A["Start app"] --> B["Load UI, theme, and parameters"]
+   B --> C["User enters message or number"]
+   C --> D["Convert input to bits"]
+   D --> E{"Data type"}
+   E -->|Number| F["16-bit numeric representation"]
+   E -->|Text| G["ASCII bytes to bitstream"]
+   F --> H["Base bitstream"]
+   G --> H
 
-    H --> I[Read controls: SNR + Channel]
-    I --> J{Selected tab}
+   H --> I["Read controls: SNR and channel"]
+   I --> J{"Selected tab"}
 
-    %% ================= TAB 1 =================
-    J -->|Adaptive No FEC| K1[For each modulation: BPSK/QPSK/16-QAM/64-QAM]
-    K1 --> L1[Modulate bits -> symbols]
-    L1 --> M1[Pass through channel: AWGN or Rayleigh]
-    M1 --> N1[Demodulate symbols -> bits]
-    N1 --> O1[Compute BER]
-    O1 --> P1[Compute throughput = bits_per_symbol x 1-BER]
-    P1 --> Q1[Compute score = throughput/(BER + eps)]
-    Q1 --> R1[Decode output bits to text/number]
-    R1 --> S1[Aggregate per-modulation results]
-    S1 --> T1[Select best score]
-    T1 --> U1[Render table + received bits + decoded output]
-    U1 --> V1[Plot BER vs SNR]
-    V1 --> W1[Plot constellation per modulation]
+   J -->|Adaptive no FEC| K1["Loop over BPSK, QPSK, 16-QAM, 64-QAM"]
+   K1 --> L1["Modulate bits to symbols"]
+   L1 --> M1["Transmit through AWGN or Rayleigh channel"]
+   M1 --> N1["Demodulate symbols to bits"]
+   N1 --> O1["Compute BER"]
+   O1 --> P1["Compute throughput"]
+   P1 --> Q1["Compute score"]
+   Q1 --> R1["Decode bits to text or number"]
+   R1 --> S1["Aggregate results"]
+   S1 --> T1["Select best modulation"]
+   T1 --> U1["Render table and decoded outputs"]
+   U1 --> V1["Plot BER versus SNR"]
+   V1 --> W1["Plot constellation diagrams"]
 
-    %% ================= TAB 2 =================
-    J -->|Hamming 7,4 FEC| K2[For each modulation]
-    K2 --> L2[hamming_encode: 4-bit blocks -> 7-bit codewords]
-    L2 --> M2[Modulate encoded bits]
-    M2 --> N2[Transmit via channel]
-    N2 --> O2[Demodulate received coded bits]
-    O2 --> P2[Compute BER pre-FEC]
-    P2 --> Q2[hamming_decode with syndrome correction]
-    Q2 --> R2[Compute BER post-FEC]
-    R2 --> S2[Compute throughput with code rate 4/7]
-    S2 --> T2[Compute score]
-    T2 --> U2[Decode recovered bits to original datatype]
-    U2 --> V2[Show corrected errors + message comparison]
-    V2 --> W2[Render BER curves and constellations]
+   J -->|Hamming 7,4 FEC| K2["Loop over all modulations"]
+   K2 --> L2["Hamming encode: 4 bits to 7 bits"]
+   L2 --> M2["Modulate encoded bits"]
+   M2 --> N2["Transmit through channel"]
+   N2 --> O2["Demodulate coded bits"]
+   O2 --> P2["Compute BER before FEC decode"]
+   P2 --> Q2["Hamming decode with syndrome correction"]
+   Q2 --> R2["Compute BER after FEC decode"]
+   R2 --> S2["Compute throughput using code rate 4 over 7"]
+   S2 --> T2["Compute score"]
+   T2 --> U2["Decode recovered bits"]
+   U2 --> V2["Show corrected errors and message comparison"]
+   V2 --> W2["Render BER and constellation plots"]
 
-    %% ================= TAB 3 =================
-    J -->|Convolutional FEC| K3[For each modulation]
-    K3 --> L3[conv_encode: rate 1/2, K=3, G1=111, G2=101]
-    L3 --> M3[Modulate encoded bits]
-    M3 --> N3[Transmit via channel]
-    N3 --> O3[Demodulate hard bits]
-    O3 --> P3[Compute BER pre-decoding]
-    P3 --> Q3[Viterbi hard-decision decode]
-    Q3 --> R3[Compute BER post-decoding]
-    R3 --> S3[Compute throughput with code rate 1/2]
-    S3 --> T3[Compute score]
-    T3 --> U3[Decode bits to text/number]
-    U3 --> V3[Show BER improvement + pipeline detail]
-    V3 --> W3[Render BER curves and constellations]
+   J -->|Convolutional FEC| K3["Loop over all modulations"]
+   K3 --> L3["Convolutional encode: rate 1 over 2, K equals 3"]
+   L3 --> M3["Modulate encoded bits"]
+   M3 --> N3["Transmit through channel"]
+   N3 --> O3["Demodulate hard bits"]
+   O3 --> P3["Compute BER before decode"]
+   P3 --> Q3["Viterbi hard-decision decode"]
+   Q3 --> R3["Compute BER after decode"]
+   R3 --> S3["Compute throughput using code rate 1 over 2"]
+   S3 --> T3["Compute score"]
+   T3 --> U3["Decode bits to text or number"]
+   U3 --> V3["Show BER improvement and pipeline detail"]
+   V3 --> W3["Render BER and constellation plots"]
 
-    W1 --> X[End Render]
-    W2 --> X
-    W3 --> X
+   W1 --> X["End render"]
+   W2 --> X
+   W3 --> X
 ```
 
 ---
