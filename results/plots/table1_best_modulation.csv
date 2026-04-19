@@ -1,4 +1,4 @@
-SNR (dB),AWGN / No FEC,"AWGN / Hamming(7,4)",AWGN / Conv R=1/2,Rayleigh / No FEC,"Rayleigh / Hamming(7,4)",Rayleigh / Conv R=1/2
+SNR (dB),AWGN No FEC,AWGN Hamming,AWGN Conv,Rayleigh No FEC,Rayleigh Hamming,Rayleigh Conv
 0,BPSK,64-QAM,BPSK,64-QAM,64-QAM,64-QAM
 2,BPSK,BPSK,BPSK,16-QAM,64-QAM,BPSK
 4,BPSK,BPSK,BPSK,QPSK,16-QAM,BPSK
