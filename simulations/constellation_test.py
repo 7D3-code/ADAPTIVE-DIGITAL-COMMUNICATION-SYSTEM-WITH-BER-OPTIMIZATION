@@ -226,7 +226,7 @@ for row, mod in enumerate(MODS):
 fig.suptitle(
     f"Figure 8 — AWGN vs Rayleigh Constellation Comparison at {SNR_COMPARE} dB SNR\n"
     "Left = AWGN  ·  Right = Rayleigh  ·  Black crosses = ideal points",
-    fontsize=10, fontweight="bold"
+    fontsize=6, fontweight="bold"
 )
 fig.tight_layout()
 p = os.path.join(OUT, "fig8_constellations_snr_compare.png")
