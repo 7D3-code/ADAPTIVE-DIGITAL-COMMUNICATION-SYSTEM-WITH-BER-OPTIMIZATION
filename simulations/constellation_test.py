@@ -1,17 +1,30 @@
 """
 CTEN 522: Adaptive Digital Communication System with BER Optimisation
 ======================================================================
-Constellation Diagrams — Standalone Script
+Constellation Diagrams with FEC — Standalone Script
 
 Generates received constellation diagrams for all four modulation schemes
 (BPSK, QPSK, 16-QAM, 64-QAM) under both channel models (AWGN, Rayleigh)
-at three SNR levels (low, medium, high) to show how noise scatters symbols.
+across all three FEC modes (No FEC, Hamming(7,4), Conv R=1/2)
+at three SNR levels (0, 10, 20 dB).
+
+Note: Constellations show the RECEIVED symbols BEFORE FEC decoding.
+      This is correct — the constellation is what the demodulator sees.
+      FEC decoding happens after symbol decisions, not before.
+      The effect of FEC is visible as reduced BER, not in the scatter itself.
+      To show FEC impact visually, we compare scatter width across FEC modes
+      using the same channel — more FEC overhead = fewer bits per symbol slot.
 
 Output folder: results/plots/
 
-  fig6_constellations_awgn.png     — 3 SNR levels × 4 modulations (AWGN)
-  fig7_constellations_rayleigh.png — 3 SNR levels × 4 modulations (Rayleigh)
-  fig8_constellations_snr_compare.png — Side-by-side SNR comparison per mod
+  fig6_const_awgn_nofec.png        — AWGN,     No FEC     (3 SNR × 4 mods)
+  fig7_const_awgn_hamming.png      — AWGN,     Hamming    (3 SNR × 4 mods)
+  fig8_const_awgn_conv.png         — AWGN,     Conv R=1/2 (3 SNR × 4 mods)
+  fig9_const_rayleigh_nofec.png    — Rayleigh, No FEC     (3 SNR × 4 mods)
+  fig10_const_rayleigh_hamming.png — Rayleigh, Hamming    (3 SNR × 4 mods)
+  fig11_const_rayleigh_conv.png    — Rayleigh, Conv R=1/2 (3 SNR × 4 mods)
+  fig12_const_fec_compare.png      — FEC comparison: 3 FEC modes side-by-side
+                                     (AWGN vs Rayleigh at 10 dB, one mod per row)
 
 Dependencies:
     pip install numpy matplotlib
@@ -36,15 +49,18 @@ os.makedirs(OUT, exist_ok=True)
 # PARAMETERS
 # ─────────────────────────────────────────────────────────────────────────────
 np.random.seed(42)
-N_SYMBOLS  = 2000          # symbols per constellation plot
-SNR_LEVELS = [0, 10, 20]   # low / medium / high SNR (dB)
-SNR_LABELS = {0: "Low SNR\n(0 dB)", 10: "Medium SNR\n(10 dB)", 20: "High SNR\n(20 dB)"}
+N_SYMBOLS  = 2000
+SNR_LEVELS = [0, 10, 20]
+SNR_LABELS = {0: "0 dB\n(Low)", 10: "10 dB\n(Medium)", 20: "20 dB\n(High)"}
 MODS       = ["BPSK", "QPSK", "16-QAM", "64-QAM"]
+FEC_MODES  = ["none", "hamming", "conv"]
+FEC_LABELS = {"none": "No FEC", "hamming": "Hamming(7,4)", "conv": "Conv R=1/2"}
 MOD_COLORS = {"BPSK": "#1f77b4", "QPSK": "#9467bd",
               "16-QAM": "#2ca02c", "64-QAM": "#d62728"}
 
 print(f"Symbols per plot : {N_SYMBOLS:,}")
 print(f"SNR levels       : {SNR_LEVELS} dB")
+print(f"FEC modes        : {[FEC_LABELS[f] for f in FEC_MODES]}")
 print(f"Output           : {OUT}/\n")
 
 plt.rcParams.update({
@@ -57,7 +73,7 @@ plt.rcParams.update({
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MODULATION FUNCTIONS  (return complex symbols)
+# MODULATION FUNCTIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def bpsk_mod(n):
@@ -86,16 +102,27 @@ def qam64_mod(n):
     Q = np.array([mv(r[3:]) for r in bits])
     return (I + 1j*Q) / np.sqrt(42)
 
-MOD_FN = {
-    "BPSK":   bpsk_mod,
-    "QPSK":   qpsk_mod,
-    "16-QAM": qam16_mod,
-    "64-QAM": qam64_mod,
-}
+MOD_FN = {"BPSK": bpsk_mod, "QPSK": qpsk_mod,
+          "16-QAM": qam16_mod, "64-QAM": qam64_mod}
 
-# Ideal (noiseless) constellation points for reference overlay
-def ideal_points(mod):
-    return MOD_FN[mod](100000)   # large sample covers all points
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEC ENCODING  (affects NUMBER OF SYMBOLS transmitted, not the IQ plot shape)
+# The constellation always shows modulated symbols. With FEC, more symbols are
+# transmitted (encoded bits are longer), but the IQ scatter pattern for a given
+# SNR is determined by the modulation + channel, not the FEC code itself.
+# We scale N_SYMBOLS by the inverse code rate so the same number of DATA bits
+# is always represented regardless of FEC overhead.
+# ══════════════════════════════════════════════════════════════════════════════
+CODE_RATES = {"none": 1.0, "hamming": 4/7, "conv": 0.5}
+
+def get_n_symbols(mod, fec):
+    """Number of symbols to generate so we always represent N_SYMBOLS worth
+    of data bits, accounting for FEC overhead."""
+    bits_per_sym = {"BPSK":1,"QPSK":2,"16-QAM":4,"64-QAM":6}[mod]
+    rate         = CODE_RATES[fec]
+    # With FEC, each data bit becomes 1/rate coded bits → more symbols
+    return int(np.ceil(N_SYMBOLS / rate))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -103,137 +130,134 @@ def ideal_points(mod):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def awgn(x, snr_db):
-    lin = 10**(snr_db / 10)
+    lin   = 10**(snr_db/10)
     noise = (np.random.randn(len(x)) + 1j*np.random.randn(len(x))) / np.sqrt(2*lin)
     return x + noise
 
 def rayleigh(x, snr_db):
     h = (np.random.randn(len(x)) + 1j*np.random.randn(len(x))) / np.sqrt(2)
-    return awgn(x * h, snr_db) / h   # equalized
+    return awgn(x*h, snr_db) / h
 
 CHANNELS = {"AWGN": awgn, "Rayleigh": rayleigh}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HELPER — draw one constellation axis
+# IDEAL CONSTELLATION POINTS (for reference crosses)
 # ══════════════════════════════════════════════════════════════════════════════
+def ideal_points(mod):
+    """Return unique IQ coordinates of the noiseless constellation."""
+    sym = MOD_FN[mod](100000)
+    re  = np.unique(np.round(np.real(sym), 4))
+    im  = np.unique(np.round(np.imag(sym), 4))
+    return re, im
 
-def plot_constellation(ax, tx_sym, rx_sym, mod, snr_db, channel_name, color):
-    """
-    Scatter plot of received symbols with ideal reference points overlaid.
-    tx_sym — transmitted (noiseless) symbols
-    rx_sym — received (noisy) symbols
-    """
-    # Received symbols (noisy cloud)
-    ax.scatter(np.real(rx_sym), np.imag(rx_sym),
-               s=3, alpha=0.35, color=color, label="Received")
 
-    # Ideal constellation points (black crosses)
-    ideal = ideal_points(mod)
-    unique_re = np.unique(np.round(np.real(ideal), 4))
-    unique_im = np.unique(np.round(np.imag(ideal), 4))
-    for re in unique_re:
-        for im in unique_im:
-            ax.plot(re, im, 'k+', ms=6, mew=1.2, zorder=5)
+# ══════════════════════════════════════════════════════════════════════════════
+# SINGLE AXIS PLOT
+# ══════════════════════════════════════════════════════════════════════════════
+def plot_const(ax, mod, ch_fn, snr_db, fec, color, title=None):
+    """Draw received constellation on ax."""
+    n   = get_n_symbols(mod, fec)
+    tx  = MOD_FN[mod](n)
+    rx  = ch_fn(tx, snr_db)
 
-    # Formatting
-    ax.set_title(f"{mod}\n{channel_name} | {snr_db} dB", fontsize=8, fontweight="bold")
-    ax.set_xlabel("In-Phase (I)", fontsize=7)
-    ax.set_ylabel("Quadrature (Q)", fontsize=7)
+    ax.scatter(np.real(rx), np.imag(rx),
+               s=3, alpha=0.30, color=color)
+
+    # Ideal reference crosses
+    re_pts, im_pts = ideal_points(mod)
+    for re in re_pts:
+        for im in im_pts:
+            ax.plot(re, im, 'k+', ms=5, mew=1.0, zorder=5)
+
     ax.axhline(0, color="#999999", lw=0.5, ls="--")
     ax.axvline(0, color="#999999", lw=0.5, ls="--")
     ax.grid(True, alpha=0.3)
     ax.set_aspect("equal")
-
-    # Dynamic axis limits based on modulation
-    lim = {"BPSK": 2.0, "QPSK": 2.0, "16-QAM": 2.0, "64-QAM": 2.0}[mod]
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-lim, lim)
+    ax.set_xlim(-2.0, 2.0)
+    ax.set_ylim(-2.0, 2.0)
+    ax.set_xlabel("I", fontsize=7)
+    ax.set_ylabel("Q", fontsize=7)
+    if title:
+        ax.set_title(title, fontsize=8, fontweight="bold")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FIGURE 6 — Constellations: AWGN Channel
-# Layout: rows = SNR level (0, 10, 20 dB)  |  cols = modulation
+# FIGURES 6–11 — one figure per Channel × FEC combination
+# Layout: rows = SNR (0, 10, 20 dB)  |  cols = modulation (BPSK…64-QAM)
 # ══════════════════════════════════════════════════════════════════════════════
-print("Generating Figure 6 — AWGN constellations…")
-fig, axes = plt.subplots(3, 4, figsize=(14, 11))
+fig_specs = [
+    ("fig6_const_awgn_nofec.png",        awgn,     "none",    "AWGN"),
+    ("fig7_const_awgn_hamming.png",       awgn,     "hamming", "AWGN"),
+    ("fig8_const_awgn_conv.png",          awgn,     "conv",    "AWGN"),
+    ("fig9_const_rayleigh_nofec.png",     rayleigh, "none",    "Rayleigh"),
+    ("fig10_const_rayleigh_hamming.png",  rayleigh, "hamming", "Rayleigh"),
+    ("fig11_const_rayleigh_conv.png",     rayleigh, "conv",    "Rayleigh"),
+]
 
-for row, snr in enumerate(SNR_LEVELS):
-    for col, mod in enumerate(MODS):
-        ax = axes[row][col]
-        tx = MOD_FN[mod](N_SYMBOLS)
-        rx = awgn(tx, snr)
-        plot_constellation(ax, tx, rx, mod, snr, "AWGN", MOD_COLORS[mod])
-        if col == 0:
-            ax.set_ylabel(f"{SNR_LABELS[snr]}\nQuadrature (Q)", fontsize=7)
+for fname, ch_fn, fec, ch_name in fig_specs:
+    fig_num = fname.split("_")[0].replace("fig","")
+    print(f"Generating Figure {fig_num} — {ch_name} / {FEC_LABELS[fec]}…")
+    fig, axes = plt.subplots(3, 4, figsize=(14, 11))
+
+    for row, snr in enumerate(SNR_LEVELS):
+        for col, mod in enumerate(MODS):
+            ax = axes[row][col]
+            plot_const(ax, mod, ch_fn, snr, fec,
+                       color=MOD_COLORS[mod],
+                       title=f"{mod}  |  {snr} dB")
+            if col == 0:
+                ax.set_ylabel(f"{SNR_LABELS[snr]}\nQ", fontsize=7)
+
+    fig.suptitle(
+        f"Figure {fig_num} — Received Constellations: {ch_name} Channel / {FEC_LABELS[fec]}\n"
+        "Rows: 0 dB · 10 dB · 20 dB     Columns: BPSK · QPSK · 16-QAM · 64-QAM     "
+        "Black crosses = ideal points",
+        fontsize=9, fontweight="bold"
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    p = os.path.join(OUT, fname)
+    fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Saved: {p}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FIGURE 12 — FEC Comparison at 10 dB SNR
+# Layout: rows = modulation  |  cols = No FEC / Hamming / Conv
+#         top half = AWGN,   bottom half = Rayleigh
+# ══════════════════════════════════════════════════════════════════════════════
+print("\nGenerating Figure 12 — FEC comparison at 10 dB…")
+SNR_CMP = 10
+fig, axes = plt.subplots(8, 3, figsize=(13, 22))
+
+for row_base, (ch_name, ch_fn) in enumerate([("AWGN", awgn), ("Rayleigh", rayleigh)]):
+    for mod_idx, mod in enumerate(MODS):
+        row = row_base * 4 + mod_idx
+        for col, fec in enumerate(FEC_MODES):
+            ax = axes[row][col]
+            plot_const(ax, mod, ch_fn, SNR_CMP, fec,
+                       color=MOD_COLORS[mod],
+                       title=f"{mod} | {ch_name}\n{FEC_LABELS[fec]}")
+
+# Column headers
+for col, fec in enumerate(FEC_MODES):
+    axes[0][col].set_title(
+        f"{FEC_LABELS[fec]}\n{MODS[0]} | AWGN",
+        fontsize=8, fontweight="bold"
+    )
 
 fig.suptitle(
-    "Figure 6 — Received Constellation Diagrams: AWGN Channel\n"
-    "Black crosses = ideal points  ·  Coloured dots = received symbols",
-    fontsize=10, fontweight="bold"
+    f"Figure 12 — FEC Mode Comparison: Received Constellations at {SNR_CMP} dB SNR\n"
+    "Top 4 rows = AWGN  ·  Bottom 4 rows = Rayleigh  ·  "
+    "Columns: No FEC / Hamming(7,4) / Conv R=1/2  ·  Black crosses = ideal points",
+    fontsize=9, fontweight="bold"
 )
-fig.tight_layout()
-p = os.path.join(OUT, "fig6_constellations_awgn.png")
+fig.tight_layout(rect=[0, 0, 1, 0.97])
+p = os.path.join(OUT, "fig12_const_fec_compare.png")
 fig.savefig(p, dpi=150, bbox_inches="tight")
 plt.close()
-print(f"Saved: {p}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# FIGURE 7 — Constellations: Rayleigh Channel
-# Same layout as Figure 6
-# ══════════════════════════════════════════════════════════════════════════════
-print("Generating Figure 7 — Rayleigh constellations…")
-fig, axes = plt.subplots(3, 4, figsize=(14, 11))
-
-for row, snr in enumerate(SNR_LEVELS):
-    for col, mod in enumerate(MODS):
-        ax = axes[row][col]
-        tx = MOD_FN[mod](N_SYMBOLS)
-        rx = rayleigh(tx, snr)
-        plot_constellation(ax, tx, rx, mod, snr, "Rayleigh", MOD_COLORS[mod])
-        if col == 0:
-            ax.set_ylabel(f"{SNR_LABELS[snr]}\nQuadrature (Q)", fontsize=7)
-
-fig.suptitle(
-    "Figure 7 — Received Constellation Diagrams: Rayleigh Channel\n"
-    "Black crosses = ideal points  ·  Coloured dots = received symbols",
-    fontsize=10, fontweight="bold"
-)
-fig.tight_layout()
-p = os.path.join(OUT, "fig7_constellations_rayleigh.png")
-fig.savefig(p, dpi=150, bbox_inches="tight")
-plt.close()
-print(f"Saved: {p}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# FIGURE 8 — AWGN vs Rayleigh side-by-side per modulation at 10 dB SNR
-# Layout: rows = modulation  |  cols = AWGN / Rayleigh
-# ══════════════════════════════════════════════════════════════════════════════
-print("Generating Figure 8 — AWGN vs Rayleigh side-by-side…")
-SNR_COMPARE = 10   # fixed SNR for this comparison
-
-fig, axes = plt.subplots(4, 2, figsize=(8, 16))
-
-for row, mod in enumerate(MODS):
-    for col, (ch_name, ch_fn) in enumerate(CHANNELS.items()):
-        ax = axes[row][col]
-        tx = MOD_FN[mod](N_SYMBOLS)
-        rx = ch_fn(tx, SNR_COMPARE)
-        plot_constellation(ax, tx, rx, mod, SNR_COMPARE, ch_name, MOD_COLORS[mod])
-
-fig.suptitle(
-    f"Figure 8 — AWGN vs Rayleigh Constellation Comparison at {SNR_COMPARE} dB SNR\n"
-    "Left = AWGN  ·  Right = Rayleigh  ·  Black crosses = ideal points",
-    fontsize=6, fontweight="bold"
-)
-fig.tight_layout()
-p = os.path.join(OUT, "fig8_constellations_snr_compare.png")
-fig.savefig(p, dpi=150, bbox_inches="tight")
-plt.close()
-print(f"Saved: {p}")
-
+print(f"  Saved: {p}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DONE
@@ -241,7 +265,11 @@ print(f"Saved: {p}")
 print(f"""
 All constellation diagrams saved to: {OUT}/
 
-  fig6_constellations_awgn.png        — AWGN channel (3 SNR levels × 4 mods)
-  fig7_constellations_rayleigh.png    — Rayleigh channel (3 SNR levels × 4 mods)
-  fig8_constellations_snr_compare.png — AWGN vs Rayleigh side-by-side at {SNR_COMPARE} dB
+  fig6_const_awgn_nofec.png        — AWGN,     No FEC
+  fig7_const_awgn_hamming.png      — AWGN,     Hamming(7,4)
+  fig8_const_awgn_conv.png         — AWGN,     Conv R=1/2
+  fig9_const_rayleigh_nofec.png    — Rayleigh, No FEC
+  fig10_const_rayleigh_hamming.png — Rayleigh, Hamming(7,4)
+  fig11_const_rayleigh_conv.png    — Rayleigh, Conv R=1/2
+  fig12_const_fec_compare.png      — All FEC modes side-by-side at 10 dB
 """)
